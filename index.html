@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Live FX Cam — Rain / Snow / Fire / Wind</title>
+<style>
+  :root{
+    --bg:#0b0f14; --panel:#0e141b; --ink:#eaf2ff; --muted:#8fa7bf; --accent:#3aa3ff; --line:#17202a;
+  }
+  *{box-sizing:border-box;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+  html,body{height:100%}
+  body{margin:0;background:linear-gradient(180deg,#071018,#0b1620);color:var(--ink)}
+  #app{display:flex;flex-direction:column;height:100%}
+  header{padding:10px 14px;display:flex;align-items:center;gap:10px;position:sticky;top:0;background:rgba(10,16,22,.75);backdrop-filter:blur(6px);border-bottom:1px solid var(--line);z-index:3}
+  header h1{font-size:15px;margin:0 8px 0 0;font-weight:700;letter-spacing:.3px;white-space:nowrap}
+  .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  button,select,input[type=range]{appearance:none;border:1px solid #223447;background:#0d1b2a;color:var(--ink);padding:10px 12px;border-radius:10px}
+  button{font-weight:700}
+  button.primary{background:var(--accent);color:#04121f;border-color:#2e89db}
+  button:disabled{opacity:.5}
+  select{padding-right:28px}
+  input[type=range]{width:140px}
+  main{position:relative;flex:1;display:grid;place-items:center;overflow:hidden}
+  #stage{position:relative;width:100%;height:100%;max-width:100vw;max-height:100vh}
+  video,canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border:none;touch-action:none}
+  #overlayUI{position:absolute;left:0;right:0;bottom:0;padding:10px;display:flex;justify-content:center;z-index:4}
+  .pill{display:inline-flex;background:rgba(8,12,18,.7);backdrop-filter:blur(8px);border:1px solid var(--line);padding:8px 10px;border-radius:16px;gap:8px;flex-wrap:wrap}
+  .badge{position:absolute;top:10px;right:10px;background:rgba(8,12,18,.7);border:1px solid var(--line);padding:6px 10px;border-radius:999px;font-size:12px}
+  .hint{font-size:12px;color:var(--muted)}
+  footer{padding:6px 14px;color:var(--muted);font-size:12px;border-top:1px solid var(--line);background:#0b1219}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>Live FX Cam</h1>
+    <div class="row">
+      <button id="btnStart" class="primary">Start camera</button>
+      <button id="btnFlip" title="Switch front/back" disabled>Flip</button>
+      <select id="fx" disabled>
+        <option value="none">No Effect</option>
+        <option value="rain">Rain</option>
+        <option value="snow">Snow</option>
+        <option value="fire">Fire</option>
+        <option value="wind">Wind</option>
+      </select>
+      <label class="hint">Intensity
+        <input id="intensity" type="range" min="0" max="100" value="60" disabled>
+      </label>
+    </div>
+  </header>
+
+  <main>
+    <div id="stage">
+      <video id="cam" playsinline autoplay muted></video>
+      <canvas id="fxCanvas"></canvas>
+      <div class="badge" id="status">idle</div>
+      <div id="overlayUI">
+        <div class="pill hint">Tip: tap “Start camera”, then pick an effect. For best view, rotate your phone.</div>
+      </div>
+    </div>
+  </main>
+
+  <footer>
+    Works on iPhone/iPad Safari and modern browsers. Camera requires HTTPS and a user gesture.
+  </footer>
+</div>
+
+<script>
+(() => {
+  const video = document.getElementById('cam');
+  const canvas = document.getElementById('fxCanvas');
+  const ctx = canvas.getContext('2d', { alpha: true });
+  const btnStart = document.getElementById('btnStart');
+  const btnFlip = document.getElementById('btnFlip');
+  const fxSel = document.getElementById('fx');
+  const intensityEl = document.getElementById('intensity');
+  const statusEl = document.getElementById('status');
+
+  let running = false;
+  let facing = 'environment';
+  let stream = null;
+  let particles = [];
+  let effect = 'none';
+  let w = 0, h = 0;
+  let dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+
+  function setStatus(t){ statusEl.textContent = t; }
+
+  function resize() {
+    const rect = canvas.getBoundingClientRect();
+    w = Math.floor(rect.width * dpr);
+    h = Math.floor(rect.height * dpr);
+    if (canvas.width !== w || canvas.height !== h) {
+      canvas.width = w;
+      canvas.height = h;
+    }
+  }
+  window.addEventListener('resize', resize);
+  new ResizeObserver(resize).observe(canvas);
+
+  async function startCamera() {
+    setStatus('requesting camera…');
+    btnStart.disabled = true;
+    try {
+      if (stream) stopCamera();
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: facing }, width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: false
+      });
+      video.srcObject = stream;
+      await video.play().catch(()=>{});
+      fxSel.disabled = false;
+      intensityEl.disabled = false;
+      btnFlip.disabled = false;
+      running = true;
+      setStatus(facing === 'user' ? 'front camera' : 'back camera');
+      initEffect(effect);
+      tick();
+    } catch (err) {
+      console.error(err);
+      setStatus('camera error');
+      alert('Could not access camera. On iPhone, open over HTTPS and allow camera access in Safari.');
+      btnStart.disabled = false;
+    }
+  }
+
+  function stopCamera() {
+    if (stream) {
+      for (const t of stream.getTracks()) t.stop();
+      stream = null;
+    }
+    running = false;
+  }
+
+  btnStart.addEventListener('click', startCamera);
+  btnFlip.addEventListener('click', async () => {
+    facing = (facing === 'user') ? 'environment' : 'user';
+    await startCamera();
+  });
+  fxSel.addEventListener('change', e => {
+    effect = e.target.value;
+    initEffect(effect);
+  });
+  intensityEl.addEventListener('input', ()=>{
+    initEffect(effect, true);
+  });
+
+  function rand(min, max){ return Math.random()*(max-min)+min; }
+
+  function initEffect(name, keep=false) {
+    resize();
+    if (!keep) particles = [];
+    switch(name) {
+      case 'rain':
+        const density = Math.floor((w*h)/(12000) * (intensityEl.value/50));
+        for (let i=0;i<density;i++) {
+          particles.push({x: Math.random()*w, y: Math.random()*h, len: rand(10*dpr, 22*dpr), vel: rand(6, 12)*dpr, drift: rand(-1, 1)*dpr, thick: rand(0.7, 1.2)*dpr});
+        }
+        break;
+      case 'snow':
+        const snowDensity = Math.floor((w*h)/(20000) * (intensityEl.value/50));
+        for (let i=0;i<snowDensity;i++) {
+          particles.push({x: Math.random()*w, y: Math.random()*h, r: rand(0.8*dpr, 2.2*dpr), velY: rand(0.4, 1.2)*dpr, velX: rand(-0.6, 0.6)*dpr, sway: Math.random()*Math.PI*2, swaySpeed: rand(0.005, 0.02)});
+        }
+        break;
+      case 'fire':
+        const base = Math.floor(80 * (intensityEl.value/50));
+        for (let i=0;i<base;i++) particles.push(makeFireParticle());
+        break;
+      case 'wind':
+        const count = Math.floor(40 * (intensityEl.value/50));
+        for (let i=0;i<count;i++) particles.push(makeLeaf());
+        break;
+    }
+  }
+
+  function makeFireParticle() {
+    return {x: w*0.5 + rand(-w*0.1, w*0.1), y: h - rand(0, 20*dpr), vx: rand(-0.4, 0.4)*dpr, vy: -rand(1.2, 2.8)*dpr, life: rand(0.8, 1.6), age: 0, r: rand(2*dpr, 5*dpr)};
+  }
+
+  function makeLeaf(){
+    const y = rand(0, h);
+    return {x: rand(-w, w), y, vx: rand(1.5, 3.5)*dpr, vy: Math.sin(y*0.01)*0.2*dpr + rand(-0.2,0.2)*dpr, len: rand(6*dpr, 14*dpr), rot: rand(0, Math.PI*2), rotSpd: rand(-0.03, 0.03)};
+  }
+
+  function tick() {
+    if (!running) return;
+    requestAnimationFrame(tick);
+    if (!video.videoWidth) return;
+    resize();
+    ctx.save();
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.drawImage(video, 0, 0, w, h);
+    switch(effect){
+      case 'rain': drawRain(); break;
+      case 'snow': drawSnow(); break;
+      case 'fire': drawFire(); break;
+      case 'wind': drawWind(); break;
+    }
+    ctx.restore();
+  }
+
+  function drawRain(){
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = 'rgba(150, 200, 255, 0.7)';
+    for (const p of particles) {
+      ctx.lineWidth = p.thick;
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+      ctx.lineTo(p.x + p.drift, p.y + p.len);
+      ctx.stroke();
+      p.x += p.drift; p.y += p.vel;
+      if (p.y > h+20) { p.y = -20; p.x = Math.random()*w; }
+    }
+  }
+
+  function drawSnow(){
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    for (const p of particles) {
+      p.sway += p.swaySpeed;
+      p.x += p.velX + Math.sin(p.sway)*0.3*dpr;
+      p.y += p.velY;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI*2);
+      ctx.fill();
+      if (p.y > h+5) { p.y = -5; p.x = Math.random()*w; }
+    }
+  }
+
+  function drawFire(){
+    const nowAdd = Math.floor(6 * (intensityEl.value/50));
+    for (let i=0;i<nowAdd;i++) particles.push(makeFireParticle());
+    for (let i=particles.length-1; i>=0; i--) {
+      const p = particles[i];
+      p.age += 0.016;
+      p.x += p.vx;
+      p.y += p.vy - p.age*0.3*dpr;
+      const life = Math.max(0, 1 - p.age/p.life);
+      const r = p.r * (0.5 + life);
+      const grd = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r);
+      grd.addColorStop(0, `rgba(255, ${Math.floor(180+60*life)}, 0, ${0.9*life})`);
+      grd.addColorStop(1, 'rgba(255,120,0,0)');
+      ctx.fillStyle = grd;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, r, 0, Math.PI*2);
+      ctx.fill();
+      if (life <= 0 || p.y < -20) particles.splice(i,1);
+    }
+  }
+
+  function drawWind(){
+    ctx.strokeStyle = 'rgba(180,220,255,0.50)';
+    ctx.lineWidth = 1.2*dpr;
+    for (const p of particles) {
+      const x2 = p.x + Math.cos(p.rot)*p.len;
+      const y2 = p.y + Math.sin(p.rot)*p.len;
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+      ctx.lineTo(x2, y2);
+      ctx.stroke();
+      p.x += p.vx;
+      p.y += p.vy;
+      p.rot += p.rotSpd;
+      if (p.x > w+20) { p.x = -20; p.y = rand(0,h); }
+    }
+  }
+
+  if (!('mediaDevices' in navigator) || !('getUserMedia' in navigator.mediaDevices)) {
+    setStatus('getUserMedia unsupported');
+    btnStart.disabled = true;
+    alert('getUserMedia is not supported in this browser.');
+  } else {
+    setStatus('ready');
+  }
+})();
+</script>
+</body>
+</html>
