@@ -1,106 +1,127 @@
-# Retry: write two versions without extra processing to avoid tool errors.
-pro_code = """<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<title>Live FX Cam — Pro + Capture</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+<title>Live FX Cam</title>
 <style>
-  :root{ --bg:#0b0f14; --panel:#0e141b; --ink:#eaf2ff; --muted:#8fa7bf; --accent:#3aa3ff; --line:#17202a; }
-  *{box-sizing:border-box;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
-  html,body{height:100%}
-  body{margin:0;background:linear-gradient(180deg,#071018,#0b1620);color:var(--ink)}
-  #app{display:grid;grid-template-rows:auto 1fr auto;min-height:100%}
-  header{padding:10px 14px;display:flex;align-items:center;gap:10px;position:sticky;top:0;background:rgba(10,16,22,.75);backdrop-filter:blur(6px);border-bottom:1px solid var(--line);z-index:3}
-  header h1{font-size:15px;margin:0 8px 0 0;font-weight:800;letter-spacing:.3px;white-space:nowrap}
-  .controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
-  .group{display:flex;align-items:center;gap:6px;background:#0d1b2a;border:1px solid #223447;border-radius:12px;padding:6px 10px}
-  .group label{font-size:12px;color:var(--muted)}
-  .group input[type=range]{width:130px}
-  .group input[type=color]{width:32px;height:28px;border:0;padding:0;background:transparent}
-  .group select, .group button{appearance:none;border:1px solid #223447;background:#0c1a27;color:var(--ink);padding:8px 10px;border-radius:10px}
-  .primary{background:var(--accent);color:#04121f;border-color:#2e89db;font-weight:700}
-  .danger{background:#e14b4b;border-color:#c23b3b;color:#160606;font-weight:800}
-  .ghost{opacity:.7}
-  main{position:relative;overflow:hidden}
-  #stage{position:relative;width:100%;height:calc(100vh - 190px);max-height:100vh}
-  video,canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border:none;touch-action:none}
-  #cam{opacity:0}
-  .badge{position:absolute;top:10px;right:10px;background:rgba(8,12,18,.7);border:1px solid var(--line);padding:6px 10px;border-radius:999px;font-size:12px}
-  footer{padding:8px 14px;color:var(--muted);font-size:12px;border-top:1px solid var(--line);background:#0b1219;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}
-  .spacer{flex:1}
-  a.button{color:var(--ink);text-decoration:none}
+  :root{ --bg:#000; --glass:rgba(12,12,14,.6); --line:rgba(255,255,255,.08); --ink:#fff; --accent:#3aa3ff; }
+  *{ box-sizing:border-box; font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
+  html,body{ height:100%; background:#000; color:var(--ink); }
+  body{ margin:0; overscroll-behavior:none; }
+  #app{ position:fixed; inset:0; }
+  /* Stage */
+  #stage{ position:absolute; inset:0; }
+  video,canvas{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover; border:0; }
+  #cam{ opacity:0 } /* draw to canvas only */
+
+  /* Minimal UI */
+  .fab{ position:absolute; z-index:6; width:44px; height:44px; border-radius:50%; display:grid; place-items:center;
+        background:var(--glass); border:1px solid var(--line); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+  #btnStart{ left:50%; top:50%; transform:translate(-50%,-50%); width:70px; height:70px; font-weight:800; font-size:14px; }
+  #btnTogglePanel{ right:14px; top:14px; font-size:18px; }
+
+  /* Hidden control panel (slide-in) */
+  #panel{ position:absolute; left:50%; transform:translateX(-50%); bottom:14px; z-index:5; display:none; }
+  #panel.show{ display:block; }
+  .panel-inner{ display:flex; gap:8px; padding:8px; border-radius:16px; background:var(--glass); border:1px solid var(--line); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
+  .group{ display:flex; align-items:center; gap:6px; }
+  .group label{ font-size:11px; opacity:.8 }
+  .group input[type=range]{ width:120px }
+  .group input[type=color]{ width:30px; height:26px; border:0; background:transparent; padding:0 }
+  .group select, .group button{ appearance:none; border:1px solid var(--line); background:rgba(20,20,24,.65); color:var(--ink); padding:6px 10px; border-radius:10px; }
+  .group button.rec{ border-color:#f33; color:#f33; }
+  .group input[type=checkbox]{ transform: scale(1.1); }
+
+  /* Recording indicator (tiny dot, no text) */
+  #recDot{ position:absolute; right:18px; top:70px; width:10px; height:10px; border-radius:50%; background:#f33; box-shadow:0 0 12px #f33; display:none; z-index:7; }
+
+  /* Prevent any default selectable text look */
+  ::selection{ background:transparent }
 </style>
 </head>
 <body>
 <div id="app">
-  <header>
-    <h1>Live FX Cam — Pro</h1>
-    <div class="controls">
-      <button id="btnStart" class="primary">Start camera</button>
-      <button id="btnFlip" disabled>Flip</button>
-      <div class="group">
-        <label>Effect</label>
-        <select id="fx" disabled>
-          <option value="rain">Rain</option>
-          <option value="snow">Snow</option>
-          <option value="fire">Fire</option>
-          <option value="wind">Wind</option>
-          <option value="none">None</option>
-        </select>
-      </div>
-      <div class="group"><label>Intensity</label><input id="intensity" type="range" min="0" max="100" value="60" disabled></div>
-      <div class="group"><label>Speed</label><input id="speed" type="range" min="0" max="100" value="60" disabled></div>
-      <div class="group"><label>Size</label><input id="size" type="range" min="0" max="100" value="50" disabled></div>
-      <div class="group"><label>Direction</label><input id="dir" type="range" min="0" max="360" value="100" disabled><span id="dirLabel" class="ghost">100°</span></div>
-      <div class="group"><label>Tint</label><input id="tint" type="color" value="#7fc5ff" disabled></div>
-      <div class="group"><label><input id="glow" type="checkbox" disabled> Glow</label></div>
-      <div class="group"><label><input id="motionBlur" type="checkbox" checked disabled> Motion blur</label></div>
-      <div class="group">
-        <button id="btnShot" disabled>📸 Screenshot</button>
-        <button id="btnRec" disabled>● Record</button>
-        <span id="recStatus" class="ghost"></span>
+  <div id="stage">
+    <video id="cam" playsinline autoplay muted></video>
+    <canvas id="fxCanvas"></canvas>
+
+    <!-- Minimal FABs -->
+    <button id="btnStart" class="fab">Start</button>
+    <button id="btnTogglePanel" class="fab">⚙️</button>
+    <div id="recDot"></div>
+
+    <!-- Hidden Controls -->
+    <div id="panel">
+      <div class="panel-inner">
+        <div class="group">
+          <label>FX</label>
+          <select id="fx" disabled>
+            <option value="rain">Rain</option>
+            <option value="snow">Snow</option>
+            <option value="fire">Fire</option>
+            <option value="wind">Wind</option>
+            <option value="none">None</option>
+          </select>
+        </div>
+        <div class="group">
+          <label>I</label><input id="intensity" type="range" min="0" max="100" value="60" disabled>
+        </div>
+        <div class="group">
+          <label>S</label><input id="speed" type="range" min="0" max="100" value="60" disabled>
+        </div>
+        <div class="group">
+          <label>Sz</label><input id="size" type="range" min="0" max="100" value="50" disabled>
+        </div>
+        <div class="group">
+          <label>Dir</label><input id="dir" type="range" min="0" max="360" value="100" disabled>
+        </div>
+        <div class="group">
+          <label>Tint</label><input id="tint" type="color" value="#7fc5ff" disabled>
+        </div>
+        <div class="group">
+          <label>Glow</label><input id="glow" type="checkbox" disabled>
+        </div>
+        <div class="group">
+          <label>Blur</label><input id="motionBlur" type="checkbox" checked disabled>
+        </div>
+        <div class="group">
+          <button id="btnShot" disabled>📸</button>
+          <button id="btnRec" class="rec" disabled>●</button>
+        </div>
+        <div class="group">
+          <button id="btnFlip" disabled>↺</button>
+        </div>
       </div>
     </div>
-  </header>
-
-  <main>
-    <div id="stage">
-      <video id="cam" playsinline autoplay muted></video>
-      <canvas id="fxCanvas"></canvas>
-      <div class="badge" id="status">idle</div>
-    </div>
-  </main>
-
-  <footer>
-    <div>Tip: Direction = wind angle (0°→right, 90°→down, 180°→left, 270°→up). Use Glow + Motion blur for cinematic look.</div>
-    <div class="spacer"></div>
-    <div id="downloads"></div>
-  </footer>
+  </div>
 </div>
 
 <script>
 (() => {
+  // Elements
   const video = document.getElementById('cam');
   const canvas = document.getElementById('fxCanvas');
   const ctx = canvas.getContext('2d', { alpha: true });
+
   const btnStart = document.getElementById('btnStart');
-  const btnFlip = document.getElementById('btnFlip');
+  const btnTogglePanel = document.getElementById('btnTogglePanel');
+  const panel = document.getElementById('panel');
+  const recDot = document.getElementById('recDot');
+
   const fxSel = document.getElementById('fx');
   const intensityEl = document.getElementById('intensity');
   const speedEl = document.getElementById('speed');
   const sizeEl = document.getElementById('size');
   const dirEl = document.getElementById('dir');
-  const dirLabel = document.getElementById('dirLabel');
   const tintEl = document.getElementById('tint');
   const glowEl = document.getElementById('glow');
   const blurEl = document.getElementById('motionBlur');
-  const statusEl = document.getElementById('status');
   const btnShot = document.getElementById('btnShot');
   const btnRec = document.getElementById('btnRec');
-  const recStatus = document.getElementById('recStatus');
-  const downloads = document.getElementById('downloads');
+  const btnFlip = document.getElementById('btnFlip');
 
+  // State
   let running = false;
   let facing = 'environment';
   let stream = null;
@@ -110,17 +131,114 @@ pro_code = """<!DOCTYPE html>
   const dpr = Math.max(1, Math.min(2, devicePixelRatio || 1));
   let lastT = performance.now();
 
-  let mediaRecorder = null;
-  let chunks = [];
-  let recording = false;
-  let recordTimer = null;
+  // Recorder
+  let mediaRecorder = null, chunks = [], recording = false, recordTimer = null;
 
-  function setStatus(t){ statusEl.textContent = t; }
-  function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
-  function lerp(a,b,t){ return a + (b-a)*t; }
-  function rand(a=0,b=1){ return Math.random()*(b-a)+a; }
-  function hexToRgb(hex){ const m=/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex); if(!m) return {r:127,g:197,b:255}; return {r:parseInt(m[1],16),g:parseInt(m[2],16),b:parseInt(m[3],16)}; }
+  // Minimal UI interactions
+  btnTogglePanel.addEventListener('click', () => {
+    panel.classList.toggle('show');
+  });
 
+  // No words, so Start is just the only required gesture
+  btnStart.addEventListener('click', startCamera, { passive:true });
+
+  async function startCamera(){
+    btnStart.style.display = 'none';
+    try{
+      if (stream) stopCamera();
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode:{ ideal:facing }, width:{ ideal:1280 }, height:{ ideal:720 } }, audio:false
+      });
+      video.srcObject = stream;
+      await video.play().catch(()=>{});
+      [fxSel,intensityEl,speedEl,sizeEl,dirEl,tintEl,glowEl,blurEl,btnFlip,btnShot,btnRec].forEach(el=>el.disabled=false);
+      running = true;
+      initEffect(effect);
+      resize();
+      requestAnimationFrame(tick);
+    }catch(e){
+      // If camera fails, show Start again to retry (still no text)
+      btnStart.style.display = 'grid';
+      console.error(e);
+    }
+  }
+  function stopCamera(){ if (!stream) return; stream.getTracks().forEach(t=>t.stop()); stream = null; running = false; }
+
+  // Resize & draw cover
+  function resize(){
+    const rect = canvas.getBoundingClientRect();
+    w = Math.floor(rect.width * dpr);
+    h = Math.floor(rect.height * dpr);
+    if (canvas.width !== w || canvas.height !== h){ canvas.width = w; canvas.height = h; }
+  }
+  addEventListener('resize', resize);
+  new ResizeObserver(resize).observe(canvas);
+  function drawVideoCover(ctx, video, w, h){
+    const vw = video.videoWidth, vh = video.videoHeight;
+    if (!vw || !vh) return;
+    const scale = Math.max(w / vw, h / vh);
+    const dw = Math.floor(vw * scale), dh = Math.floor(vh * scale);
+    const dx = Math.floor((w - dw) / 2), dy = Math.floor((h - dh) / 2);
+    ctx.drawImage(video, dx, dy, dw, dh);
+  }
+
+  // Controls
+  btnFlip.addEventListener('click', async ()=>{ facing = (facing==='user')?'environment':'user'; await startCamera(); });
+  fxSel.addEventListener('change', e=>{ effect = e.target.value; initEffect(effect); });
+  [intensityEl,speedEl,sizeEl,dirEl,tintEl,glowEl,blurEl].forEach(el=>el.addEventListener('input', ()=> tuneEffect()));
+
+  // Screenshot (silent, no text appended)
+  btnShot.addEventListener('click', ()=>{
+    try{
+      const tmp = document.createElement('canvas'); tmp.width = w; tmp.height = h;
+      const tctx = tmp.getContext('2d', {alpha:true}); tctx.drawImage(canvas, 0, 0);
+      const url = tmp.toDataURL('image/png');
+      const a = document.createElement('a'); a.href = url; a.download = `livefx_${Date.now()}.png`; a.click();
+      setTimeout(()=>URL.revokeObjectURL && URL.revokeObjectURL(url), 60000);
+    }catch(e){ console.error(e); }
+  });
+
+  // Recording (tiny red dot only)
+  btnRec.addEventListener('click', ()=>{ if (!recording) startRecording(); else stopRecording(); });
+  function pickBestMime(){
+    const prefs = ['video/mp4;codecs=h264','video/mp4','video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm'];
+    for (const m of prefs){ if (MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(m)) return m; }
+    return '';
+  }
+  function startRecording(){
+    try{
+      const fps = 30;
+      const s = canvas.captureStream ? canvas.captureStream(fps) : null;
+      if (!s) return;
+      const mime = pickBestMime();
+      mediaRecorder = new MediaRecorder(s, mime ? {mimeType:mime} : {});
+      chunks = [];
+      mediaRecorder.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+      mediaRecorder.onstop = finalizeRecording;
+      mediaRecorder.start();
+      recording = true; recDot.style.display = 'block';
+      // safety auto-stop ~30s
+      recordTimer = setTimeout(()=>{ if(recording) stopRecording(); }, 30000);
+    }catch(e){ console.error(e); }
+  }
+  function stopRecording(){
+    try{
+      if (recordTimer) clearTimeout(recordTimer);
+      recordTimer = null;
+      if (mediaRecorder && recording) mediaRecorder.stop();
+    }catch(e){ console.error(e); }
+  }
+  function finalizeRecording(){
+    recording = false; recDot.style.display = 'none';
+    const blob = new Blob(chunks, { type: chunks[0]?.type || 'video/webm' });
+    const url = URL.createObjectURL(blob);
+    const ext = blob.type.includes('mp4') ? 'mp4' : 'webm';
+    const a = document.createElement('a'); a.href = url; a.download = `livefx_${Date.now()}.${ext}`; a.target = '_blank'; a.click();
+    setTimeout(()=>URL.revokeObjectURL(url), 60000);
+  }
+
+  // FX engine (same realism as before, no on-screen text)
+  let dNoise = makeNoise();
   function makeNoise(seed=1337){
     let s = seed;
     function xorshift(){ s^=s<<13; s^=s>>17; s^=s<<5; return (s>>>0)/4294967295; }
@@ -135,144 +253,12 @@ pro_code = """<!DOCTYPE html>
       const u=fade(xf), v=fade(yf);
       const x1=lerp(dot(tl,xf,yf),   dot(tr,xf-1,yf),u);
       const x2=lerp(dot(bl,xf,yf-1), dot(br,xf-1,yf-1),u);
-      return lerp(x1,x2,v);
+      return (x1 + (x2 - x1)*v);
     };
   }
-  const noise = makeNoise();
+  const lerp=(a,b,t)=>a+(b-a)*t, rand=(a=0,b=1)=>Math.random()*(b-a)+a;
 
-  function resize(){
-    const rect = canvas.getBoundingClientRect();
-    w = Math.floor(rect.width * dpr);
-    h = Math.floor(rect.height * dpr);
-    if (canvas.width !== w || canvas.height !== h){ canvas.width = w; canvas.height = h; }
-  }
-  addEventListener('resize', resize);
-  new ResizeObserver(resize).observe(canvas);
-
-  function drawVideoCover(ctx, video, w, h){
-    const vw = video.videoWidth, vh = video.videoHeight;
-    if (!vw || !vh) return;
-    const scale = Math.max(w / vw, h / vh);
-    const dw = Math.floor(vw * scale), dh = Math.floor(vh * scale);
-    const dx = Math.floor((w - dw) / 2), dy = Math.floor((h - dh) / 2);
-    ctx.drawImage(video, dx, dy, dw, dh);
-  }
-
-  async function startCamera(){
-    setStatus('requesting camera…');
-    btnStart.disabled = true;
-    try{
-      if (stream) stopCamera();
-      stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode:{ ideal:facing }, width:{ ideal:1280 }, height:{ ideal:720 } },
-        audio: false
-      });
-      video.srcObject = stream;
-      await video.play().catch(()=>{});
-      [fxSel,intensityEl,speedEl,sizeEl,dirEl,tintEl,glowEl,blurEl,btnFlip,btnShot,btnRec].forEach(el=>el.disabled=false);
-      running = true;
-      setStatus(facing==='user'?'front camera':'back camera');
-      initEffect(effect);
-      resize();
-      requestAnimationFrame(tick);
-    }catch(e){
-      console.error(e);
-      setStatus('camera error');
-      alert('Could not access camera. Use HTTPS and allow permission.');
-      btnStart.disabled = false;
-    }
-  }
-  function stopCamera(){
-    if (!stream) return;
-    stream.getTracks().forEach(t=>t.stop());
-    stream = null;
-    running = false;
-  }
-
-  btnStart.addEventListener('click', startCamera);
-  btnFlip.addEventListener('click', async ()=>{ facing = (facing==='user')?'environment':'user'; await startCamera(); });
-  fxSel.addEventListener('change', e=>{ effect = e.target.value; initEffect(effect); });
-  [intensityEl,speedEl,sizeEl,dirEl,tintEl,glowEl,blurEl].forEach(el=>el.addEventListener('input', ()=>{ if(el===dirEl) dirLabel.textContent = dirEl.value + '°'; tuneEffect(); }));
-
-  btnShot.addEventListener('click', ()=>{
-    try{
-      const tmp = document.createElement('canvas');
-      tmp.width = w; tmp.height = h;
-      const tctx = tmp.getContext('2d', {alpha:true});
-      tctx.drawImage(canvas, 0, 0);
-      const url = tmp.toDataURL('image/png');
-      downloadBlob(url, `livefxcam_${Date.now()}.png`, true);
-    }catch(e){
-      alert('Screenshot failed.');
-      console.error(e);
-    }
-  });
-
-  btnRec.addEventListener('click', ()=>{ if (!recording) startRecording(); else stopRecording(); });
-
-  function pickBestMime(){
-    const prefs = ['video/mp4;codecs=h264','video/mp4','video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm'];
-    for (const m of prefs){ if (MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(m)) return m; }
-    return '';
-  }
-
-  function startRecording(){
-    try{
-      const fps = 30;
-      const s = canvas.captureStream ? canvas.captureStream(fps) : null;
-      if (!s){ alert('Recording not supported in this browser.'); return; }
-      const mime = pickBestMime();
-      mediaRecorder = new MediaRecorder(s, mime ? {mimeType:mime} : {});
-      chunks = [];
-      mediaRecorder.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
-      mediaRecorder.onstop = finalizeRecording;
-      mediaRecorder.start();
-      recording = true;
-      btnRec.textContent = '■ Stop';
-      btnRec.classList.add('danger');
-      recStatus.textContent = 'Recording… (max ~30s)';
-      recordTimer = setTimeout(()=>{ if(recording) stopRecording(); }, 30000);
-    }catch(e){
-      console.error(e);
-      alert('Failed to start recording.');
-    }
-  }
-
-  function stopRecording(){
-    try{
-      if (recordTimer) clearTimeout(recordTimer);
-      recordTimer = null;
-      if (mediaRecorder && recording) mediaRecorder.stop();
-    }catch(e){
-      console.error(e);
-    }
-  }
-
-  function finalizeRecording(){
-    recording = false;
-    btnRec.textContent = '● Record';
-    btnRec.classList.remove('danger');
-    recStatus.textContent = '';
-    const blob = new Blob(chunks, { type: chunks[0]?.type || 'video/webm' });
-    const url = URL.createObjectURL(blob);
-    const ext = blob.type.includes('mp4') ? 'mp4' : 'webm';
-    downloadBlob(url, `livefxcam_${Date.now()}.${ext}`);
-  }
-
-  function downloadBlob(url, filename, dataURL=false){
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    a.className = 'button';
-    a.textContent = 'Saved: ' + filename;
-    a.target = '_blank';
-    downloads.prepend(a);
-    downloads.prepend(document.createElement('br'));
-    setTimeout(()=>a.click(), 0);
-    if (!dataURL) setTimeout(()=>URL.revokeObjectURL(url), 60*1000);
-  }
-
-  function initEffect(name){ particles.length = 0; tuneEffect(true); }
+  function initEffect(){ particles.length = 0; tuneEffect(true); }
   function tuneEffect(reset=false){
     const tint = hexToRgb(tintEl.value);
     const I = intensityEl.value/100, S = speedEl.value/100, Z = sizeEl.value/100;
@@ -289,11 +275,12 @@ pro_code = """<!DOCTYPE html>
     }
     for (const p of particles){ p.wind=wind; p.speedScale=S; p.sizeScale=Z; p.tint=tint; }
   }
+  function hexToRgb(hex){ const m=/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex); if(!m) return {r:127,g:197,b:255}; return {r:parseInt(m[1],16),g:parseInt(m[2],16),b:parseInt(m[3],16)}; }
 
   function makeParticle(type, wind, S, Z, tint){
     switch(type){
-      case 'rain': return {type,x:Math.random()*w,y:Math.random()*h,len:lerp(8,28,Z)*dpr,thick:lerp(0.6,1.5,Z)*dpr,vel:lerp(6,16,S)*dpr,drift:(wind.x*2+rand(-0.5,0.5))*dpr,splash:0,wind,speedScale:S,sizeScale:Z,tint};
-      case 'snow': { const depth=rand(0.3,1.0); return {type,x:Math.random()*w,y:Math.random()*h,r:lerp(0.8,2.8,Z*depth)*dpr,depth,vx:0,vy:0,sway:Math.random()*Math.PI*2,spin:rand(-0.02,0.02),wind,speedScale:S,sizeScale:Z,tint}; }
+      case 'rain': return {type,x:Math.random()*w,y:Math.random()*h,len:lerp(8,28,Z)*dpr,thick:lerp(0.6,1.5,Z)*dpr,vel:lerp(6,16,S)*dpr,drift:(wind.x*2+rand(-0.5,0.5))*dpr,wind,speedScale:S,sizeScale:Z,tint};
+      case 'snow': { const depth=rand(0.3,1.0); return {type,x:Math.random()*w,y:Math.random()*h,r:lerp(0.8,2.8,Z*depth)*dpr,depth,sway:Math.random()*Math.PI*2,spin:rand(-0.02,0.02),wind,speedScale:S,sizeScale:Z,tint}; }
       case 'fire': return makeFireParticle(w,h,S,Z,tint);
       case 'wind': return {type,x:rand(-w,w),y:rand(0,h),len:lerp(8,20,Z)*dpr,rot:rand(0,Math.PI*2),rotSpd:rand(-0.03,0.03),vx:(2+3*S)*dpr*wind.x,vy:(0.5+1.5*S)*dpr*wind.y,tint,wind,speedScale:S,sizeScale:Z};
       default: return {};
@@ -309,8 +296,10 @@ pro_code = """<!DOCTYPE html>
     if (!video.videoWidth) return;
     resize();
 
-    ctx.save();
-    if (blurEl.checked){ ctx.fillStyle='rgba(0,0,0,0.08)'; ctx.fillRect(0,0,w,h); } else { ctx.clearRect(0,0,w,h); }
+    // Clear or light trails
+    if (blurEl.checked){ ctx.fillStyle='rgba(0,0,0,0.08)'; ctx.fillRect(0,0,w,h); }
+    else ctx.clearRect(0,0,w,h);
+
     drawVideoCover(ctx, video, w, h);
 
     switch(effect){
@@ -319,50 +308,39 @@ pro_code = """<!DOCTYPE html>
       case 'fire': drawFire(t); break;
       case 'wind': drawWind(t); break;
     }
-    ctx.restore();
     lastT = t;
   }
 
   function drawRain(t){
-    const tint = hexToRgb(tintEl.value);
-    const col = `rgba(${tint.r},${tint.g},${tint.b},`;
-    ctx.lineCap = 'round';
+    const c = tintEl.value; const rgb = hexToRgb(c);
+    ctx.lineCap='round';
     for (const p of particles){
-      const n = noise(p.x*0.003, (p.y+t*0.0015)*0.003);
-      const wobble = n*1.6;
-      const vx = p.drift + p.wind.x*1.4 + wobble*0.2;
+      const n = dNoise(p.x*0.003, (p.y+t*0.0015)*0.003);
+      const vx = p.drift + p.wind.x*1.4 + n*0.2;
       const vy = p.vel + p.wind.y*0.6;
-      ctx.strokeStyle = col + '0.65)';
+      ctx.strokeStyle = `rgba(${rgb.r},${rgb.g},${rgb.b},0.65)`;
       ctx.lineWidth = p.thick;
-      ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x + vx*1.5, p.y + p.len); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(p.x,p.y); ctx.lineTo(p.x + vx*1.5, p.y + p.len); ctx.stroke();
       p.x += vx; p.y += vy;
-      if (p.y > h - 2*dpr){ p.y = -20; p.x = Math.random()*w; p.splash=0; }
+      if (p.y > h - 2*dpr){ p.y = -20; p.x = Math.random()*w; }
       if (p.x < -20) p.x = w+20; if (p.x > w+20) p.x = -20;
     }
-    const g = ctx.createLinearGradient(0, h*0.7, 0, h);
-    g.addColorStop(0, 'rgba(20,30,40,0)'); g.addColorStop(1, 'rgba(10,15,20,0.25)');
-    ctx.fillStyle = g; ctx.fillRect(0, h*0.6, w, h*0.4);
-    if (glowEl.checked){ ctx.fillStyle='rgba(200,220,255,0.04)'; ctx.fillRect(0,0,w,h); }
   }
 
   function drawSnow(t){
-    const tint = hexToRgb(tintEl.value);
-    ctx.fillStyle = `rgba(${tint.r},${tint.g},${tint.b},0.95)`;
+    const rgb = hexToRgb(tintEl.value);
+    ctx.fillStyle = `rgba(${rgb.r},${rgb.g},${rgb.b},0.95)`;
     for (const p of particles){
-      p.sway += p.spin;
-      const n = noise((p.x+t*0.0007)*0.004, (p.y-t*0.0005)*0.004);
+      p.sway = (p.sway||0) + (p.spin||0);
+      const n = dNoise((p.x+t*0.0007)*0.004, (p.y-t*0.0005)*0.004);
       const swayX = Math.sin(p.sway)*0.4*dpr + n*0.8*dpr;
-      const baseFall = lerp(0.4,1.4,p.speedScale)*dpr*(0.6+0.4*(1-p.depth));
+      const baseFall = ((0.4 + 1.0*(speedEl.value/100)))*dpr*(0.6+0.4*(1-(p.depth||0.8)));
       const windX = p.wind.x*1.6*dpr, windY = p.wind.y*0.8*dpr;
       p.x += swayX + windX; p.y += baseFall + windY;
-      ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.r||1.5*dpr, 0, Math.PI*2); ctx.fill();
       if (p.y > h+5) { p.y = -5; p.x = Math.random()*w; }
       if (p.x < -5) p.x = w+5; if (p.x > w+5) p.x = -5;
     }
-    const g = ctx.createLinearGradient(0,0,0,h);
-    g.addColorStop(0,'rgba(140,190,255,0.06)'); g.addColorStop(1,'rgba(10,20,40,0.18)');
-    ctx.fillStyle = g; ctx.fillRect(0,0,w,h);
-    if (glowEl.checked){ ctx.fillStyle='rgba(180,220,255,0.045)'; ctx.fillRect(0,0,w,h); }
   }
 
   function drawFire(t){
@@ -371,63 +349,87 @@ pro_code = """<!DOCTYPE html>
     for (let i=particles.length-1;i>=0;i--){
       const p = particles[i]; if (p.type!=='fire') continue;
       p.age += 0.016;
-      const n = noise(p.x*0.01, (p.y+t*0.0015)*0.01);
-      p.x += p.vx + n*0.8*dpr; p.y += p.vy - p.age*0.35*dpr;
-      const life = Math.max(0, 1 - p.age/p.life); const r = p.r*(0.6+life);
-      const hot = {r:255, g: lerp(120,220,life), b:0}; const tint=p.tint;
-      const cr=Math.floor(lerp(hot.r,tint.r,0.25)), cg=Math.floor(lerp(hot.g,tint.g,0.15)), cb=Math.floor(lerp(hot.b,tint.b,0.05));
+      const n = dNoise(p.x*0.01, (p.y+t*0.0015)*0.01);
+      p.x += (p.vx||0) + n*0.8*dpr; p.y += (p.vy||0) - p.age*0.35*dpr;
+      const life = Math.max(0, 1 - p.age/(p.life||1)); const r = (p.r||2*dpr)*(0.6+life);
+      const hot = {r:255, g: Math.floor(120 + 100*life), b:0}; const tint = p.tint||{r:255,g:140,b:0};
+      const cr=Math.floor(0.75*hot.r + 0.25*tint.r), cg=Math.floor(0.85*hot.g + 0.15*tint.g), cb=Math.floor(0.95*hot.b + 0.05*tint.b);
       const grd = ctx.createRadialGradient(p.x,p.y,0,p.x,p.y,r);
       grd.addColorStop(0,`rgba(${cr},${cg},${cb},${0.85*life})`); grd.addColorStop(1,`rgba(${cr},${cg},${cb},0)`);
       ctx.fillStyle = grd; ctx.beginPath(); ctx.arc(p.x,p.y,r,0,Math.PI*2); ctx.fill();
-      if (p.ember){ ctx.globalCompositeOperation='screen'; ctx.fillStyle=`rgba(255,200,80,${0.25*life})`; ctx.beginPath(); ctx.arc(p.x,p.y,r*0.5,0,Math.PI*2); ctx.fill(); ctx.globalCompositeOperation='source-over'; }
       if (life<=0 || p.y < -20) particles.splice(i,1);
     }
-    const g = ctx.createLinearGradient(0, h*0.55, 0, h);
-    g.addColorStop(0,'rgba(255,150,40,0)'); g.addColorStop(1,'rgba(255,150,40,0.12)');
-    ctx.fillStyle = g; ctx.fillRect(0, h*0.55, w, h*0.45);
-    if (glowEl.checked){ ctx.fillStyle='rgba(255,120,0,0.05)'; ctx.fillRect(0,0,w,h); }
   }
 
   function drawWind(t){
-    const tint = hexToRgb(tintEl.value);
-    ctx.strokeStyle = `rgba(${tint.r},${tint.g},${tint.b},0.55)`; ctx.lineWidth = 1.2*dpr;
+    const rgb = hexToRgb(tintEl.value);
+    ctx.strokeStyle = `rgba(${rgb.r},${rgb.g},${rgb.b},0.55)`; ctx.lineWidth = 1.2*dpr;
     for (const p of particles){
-      const gust = noise((p.y+t*0.0012)*0.01, (p.x-t*0.001)*0.01)*1.2;
-      const vx = p.vx + gust*0.8, vy = p.vy + gust*0.2;
-      const x2 = p.x + Math.cos(p.rot)*p.len, y2 = p.y + Math.sin(p.rot)*p.len;
+      const gust = dNoise((p.y+t*0.0012)*0.01, (p.x-t*0.001)*0.01)*1.2;
+      const vx = (p.vx||0) + gust*0.8, vy = (p.vy||0) + gust*0.2;
+      const x2 = p.x + Math.cos(p.rot||0)*(p.len||10), y2 = p.y + Math.sin(p.rot||0)*(p.len||10);
       ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(x2, y2); ctx.stroke();
-      p.x += vx; p.y += vy; p.rot += p.rotSpd;
-      if (p.x > w+30){ p.x = -30; p.y = rand(0,h); }
-      if (p.x < -30){ p.x = w+30; p.y = rand(0,h); }
-      if (p.y > h+30){ p.y = -30; p.x = rand(0,w); }
-      if (p.y < -30){ p.y = h+30; p.x = rand(0,w); }
+      p.x += vx; p.y += vy; p.rot = (p.rot||0) + (p.rotSpd||0);
+      if (p.x > w+30){ p.x = -30; p.y = Math.random()*h; }
+      if (p.x < -30){ p.x = w+30; p.y = Math.random()*h; }
+      if (p.y > h+30){ p.y = -30; p.x = Math.random()*w; }
+      if (p.y < -30){ p.y = h+30; p.x = Math.random()*w; }
     }
-    if (glowEl.checked){ ctx.fillStyle=`rgba(${tint.r},${tint.g},${tint.b},0.04)`; ctx.fillRect(0,0,w,h); }
+  }
+
+  // Particles + tuning
+  function tuneEffect(reset=false){
+    const tint = hexToRgb(tintEl.value);
+    const I = intensityEl.value/100, S = speedEl.value/100, Z = sizeEl.value/100;
+    const ang = (+dirEl.value) * Math.PI/180;
+    const wind = { x: Math.cos(ang), y: Math.sin(ang) };
+    const countTarget = { rain:Math.floor((w*h)/9000*(0.2+I*1.2)), snow:Math.floor((w*h)/16000*(0.2+I*1.3)), fire:Math.floor(120*(0.3+I*1.7)), wind:Math.floor(70*(0.3+I*2.0)) }[effect]||0;
+    if (reset || particles.length===0){
+      particles.length = 0;
+      for (let i=0;i<countTarget;i++) particles.push(makeParticle(effect, wind, S, Z, tint));
+    } else if (particles.length < countTarget){
+      for (let i=particles.length;i<countTarget;i++) particles.push(makeParticle(effect, wind, S, Z, tint));
+    } else if (particles.length > countTarget){
+      particles.length = countTarget;
+    }
+    for (const p of particles){ p.wind=wind; p.speedScale=S; p.sizeScale=Z; p.tint=tint; }
+  }
+  function hexToRgb(hex){ const m=/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex); if(!m) return {r:127,g:197,b:255}; return {r:parseInt(m[1],16),g:parseInt(m[2],16),b:parseInt(m[3],16)}; }
+
+  function makeParticle(type, wind, S, Z, tint){
+    switch(type){
+      case 'rain': return {type,x:Math.random()*w,y:Math.random()*h,len:((8+(20*Z))*dpr),thick:((0.6+(0.9*Z))*dpr),vel:((6+(10*S))*dpr),drift:(wind.x*2+(Math.random()-0.5))*dpr,wind,speedScale:S,sizeScale:Z,tint};
+      case 'snow': { const depth=0.3+Math.random()*0.7; return {type,x:Math.random()*w,y:Math.random()*h,r:((0.8+(2.0*Z*depth))*dpr),depth,sway:Math.random()*Math.PI*2,spin:(Math.random()-.5)*0.04,wind,speedScale:S,sizeScale:Z,tint}; }
+      case 'fire': return makeFireParticle(w,h,S,Z,tint);
+      case 'wind': return {type,x:(Math.random()*2-1)*w,y:Math.random()*h,len:((8+(12*Z))*dpr),rot:Math.random()*Math.PI*2,rotSpd:(Math.random()-.5)*0.06,vx:(2+3*S)*dpr*wind.x,vy:(0.5+1.5*S)*dpr*wind.y,tint,wind,speedScale:S,sizeScale:Z};
+      default: return {};
+    }
+  }
+  function makeFireParticle(w,h,S,Z,tint){
+    return {type:'fire',x:w*0.5+(Math.random()*2-1)*w*0.12,y:h-Math.random()*20*dpr,vx:(Math.random()*0.8-0.4)*dpr,vy:-(1.0+2.2*S)*dpr,life:0.8+Math.random()*0.8,age:0,r:(2.0+3.0*Z)*dpr,ember:Math.random()<0.15?1:0,tint};
+  }
+
+  function requestFS(){ try{ const de = document.documentElement; if (de.requestFullscreen) de.requestFullscreen(); }catch{} }
+  document.addEventListener('touchend', requestFS, { once:true });
+
+  function tick(t){
+    if (!running) return;
+    requestAnimationFrame(tick);
+    if (!video.videoWidth) return;
+    resize();
+    if (blurEl.checked){ ctx.fillStyle='rgba(0,0,0,0.08)'; ctx.fillRect(0,0,w,h); } else ctx.clearRect(0,0,w,h);
+    drawVideoCover(ctx, video, w, h);
+    switch(effect){
+      case 'rain': drawRain(t); break;
+      case 'snow': drawSnow(t); break;
+      case 'fire': drawFire(t); break;
+      case 'wind': drawWind(t); break;
+    }
+    lastT = t;
   }
 
   document.addEventListener('visibilitychange', ()=>{ if (document.visibilityState==='visible' && stream && video.paused) video.play().catch(()=>{}); });
-  if (!('mediaDevices' in navigator) || !('getUserMedia' in navigator.mediaDevices)){ setStatus('getUserMedia unsupported'); btnStart.disabled=true; alert('getUserMedia is not supported in this browser.'); } else { setStatus('ready'); }
 })();
 </script>
 </body>
 </html>
-"""
-
-# Create lite version by string tweaks
-lite_code = pro_code.replace("const dpr = Math.max(1, Math.min(2, devicePixelRatio || 1));",
-                             "const dpr = 1.25; // cap DPR for performance")
-lite_code = lite_code.replace('id="motionBlur" type="checkbox" checked disabled', 'id="motionBlur" type="checkbox" disabled')
-lite_code = lite_code.replace("(w*h)/9000", "(w*h)/12000")
-lite_code = lite_code.replace("(w*h)/16000", "(w*h)/22000")
-lite_code = lite_code.replace("Math.floor(120*(0.3+I*1.7))", "Math.floor(80*(0.3+I*1.4))")
-lite_code = lite_code.replace("Math.floor(70*(0.3+I*2.0))", "Math.floor(45*(0.3+I*1.8))")
-lite_code = lite_code.replace("const fps = 30;", "const fps = 24;")
-lite_code = lite_code.replace("30000", "20000")
-
-# Save files
-with open("/mnt/data/livefxcam_pro.html","w",encoding="utf-8") as f:
-    f.write(pro_code)
-with open("/mnt/data/livefxcam_pro_lite.html","w",encoding="utf-8") as f:
-    f.write(lite_code)
-
-("/mnt/data/livefxcam_pro.html","/mnt/data/livefxcam_pro_lite.html")
