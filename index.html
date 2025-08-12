@@ -5,41 +5,44 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
 <title>Live FX Cam</title>
 <style>
-  :root{ --glass:rgba(12,12,14,.6); --line:rgba(255,255,255,.08); --ink:#fff; --accent:#3aa3ff; }
-  *{ box-sizing:border-box; font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
-  html,body{ height:100%; background:#000; color:var(--ink); }
-  body{ margin:0; overscroll-behavior:none; }
-  #app{ position:fixed; inset:0; }
-  #stage{ position:absolute; inset:0; }
-  video,canvas{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover; border:0; }
-  #cam{ opacity:0 } /* draw via canvas only */
+  :root{ --glass:rgba(12,12,14,.6); --line:rgba(255,255,255,.08); --ink:#fff; }
+  *{ box-sizing:border-box; font-family: system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif }
+  html,body{ height:100%; background:#000; color:var(--ink) }
+  body{ margin:0; overscroll-behavior:none }
+  #app{ position:fixed; inset:0 }
+  #stage{ position:absolute; inset:0 }
+  video,canvas{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover; border:0 }
+  #cam{ opacity:0 } /* we draw to canvas */
 
-  /* Start button — large, centered, always visible until camera running */
+  /* Enable Camera button (visible on load) */
   #btnStart{
     position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
     z-index:10; width:220px; height:64px; border-radius:16px; font-size:17px; font-weight:800;
     background:linear-gradient(180deg,#38A0FF,#1573D9); color:#03101f; border:1px solid #2e89db;
     box-shadow:0 10px 30px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.25);
   }
-  #btnStart.hidden{ display:none; }
+  #btnStart.hidden{ display:none }
 
   /* Tiny gear to toggle controls */
   .fab{ position:absolute; z-index:9; width:44px; height:44px; border-radius:50%; display:grid; place-items:center;
-        background:var(--glass); border:1px solid var(--line); -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px);}
-  #btnTogglePanel{ right:14px; top:14px; font-size:18px; }
+        background:var(--glass); border:1px solid var(--line); -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px) }
+  #btnTogglePanel{ right:14px; top:14px; font-size:18px }
 
-  /* Control panel (hidden by default) */
-  #panel{ position:absolute; left:50%; transform:translateX(-50%); bottom:14px; z-index:8; display:none; }
-  #panel.show{ display:block; }
-  .panel-inner{ display:flex; gap:8px; padding:8px; border-radius:16px; background:var(--glass); border:1px solid var(--line); -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px); }
-  .group{ display:flex; align-items:center; gap:6px; }
+  /* Hidden panel */
+  #panel{ position:absolute; left:50%; transform:translateX(-50%); bottom:14px; z-index:8; display:none }
+  #panel.show{ display:block }
+  .panel-inner{ display:flex; gap:8px; padding:8px; border-radius:16px; background:var(--glass); border:1px solid var(--line);
+                -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px) }
+  .group{ display:flex; align-items:center; gap:6px }
   .group input[type=range]{ width:120px }
   .group input[type=color]{ width:30px; height:26px; border:0; background:transparent; padding:0 }
-  .group select, .group button{ appearance:none; border:1px solid var(--line); background:rgba(20,20,24,.65); color:var(--ink); padding:6px 10px; border-radius:10px; }
-  .group button.rec{ border-color:#f33; color:#f33; }
+  .group select,.group button{ appearance:none; border:1px solid var(--line); background:rgba(20,20,24,.65); color:var(--ink);
+                               padding:6px 10px; border-radius:10px }
+  .group button.rec{ border-color:#f33; color:#f33 }
 
   /* Recording dot (no text) */
-  #recDot{ position:absolute; right:18px; top:70px; width:10px; height:10px; border-radius:50%; background:#f33; box-shadow:0 0 12px #f33; display:none; z-index:9; }
+  #recDot{ position:absolute; right:18px; top:70px; width:10px; height:10px; border-radius:50%; background:#f33;
+           box-shadow:0 0 12px #f33; display:none; z-index:9 }
 
   ::selection{ background:transparent }
 </style>
@@ -50,14 +53,14 @@
     <video id="cam" playsinline autoplay muted></video>
     <canvas id="fxCanvas"></canvas>
 
-    <!-- Big central camera button -->
+    <!-- Always-visible camera button -->
     <button id="btnStart" aria-label="Enable Camera">Enable Camera</button>
 
     <!-- Minimal UI -->
     <button id="btnTogglePanel" class="fab" aria-label="Toggle Controls">⚙️</button>
     <div id="recDot"></div>
 
-    <!-- Hidden controls (no instructions text) -->
+    <!-- Hidden Controls (icons/inputs only, no text) -->
     <div id="panel">
       <div class="panel-inner">
         <div class="group"><select id="fx" disabled>
@@ -115,15 +118,15 @@
   let w = 0, h = 0;
   const dpr = Math.max(1, Math.min(2, devicePixelRatio || 1));
 
-  // --- UI
+  // UI
   btnTogglePanel.addEventListener('click', () => panel.classList.toggle('show'));
 
-  // Always-visible Start button until camera runs
+  // Camera enable button (always visible until success)
+  btnStart.classList.remove('hidden');
   btnStart.addEventListener('click', startCamera, { passive:true });
 
   async function startCamera(){
     try{
-      // keep the button visible until we know we have a stream
       const s = await navigator.mediaDevices.getUserMedia({
         video: { facingMode:{ ideal:facing }, width:{ ideal:1280 }, height:{ ideal:720 } },
         audio: false
@@ -131,9 +134,7 @@
       stream = s;
       video.srcObject = stream;
       await video.play().catch(()=>{});
-      // now hide the button
       btnStart.classList.add('hidden');
-
       [fxSel,intensityEl,speedEl,sizeEl,dirEl,tintEl,glowEl,blurEl,btnFlip,btnShot,btnRec].forEach(el=>el.disabled=false);
       running = true;
       initEffect(effect);
@@ -141,8 +142,7 @@
       requestAnimationFrame(tick);
     }catch(e){
       console.error(e);
-      // keep the button visible so the user can try again
-      btnStart.classList.remove('hidden');
+      btnStart.classList.remove('hidden'); // keep retry visible
     }
   }
 
@@ -150,10 +150,10 @@
     if (!stream) return;
     stream.getTracks().forEach(t=>t.stop());
     stream = null; running = false;
-    btnStart.classList.remove('hidden'); // show again if stopped
+    btnStart.classList.remove('hidden');
   }
 
-  // Resize & draw cover
+  // Resize & aspect-safe draw
   function resize(){
     const rect = canvas.getBoundingClientRect();
     w = Math.floor(rect.width * dpr);
@@ -162,6 +162,7 @@
   }
   addEventListener('resize', resize);
   new ResizeObserver(resize).observe(canvas);
+
   function drawVideoCover(ctx, video, w, h){
     const vw = video.videoWidth, vh = video.videoHeight;
     if (!vw || !vh) return;
@@ -173,6 +174,10 @@
 
   // Controls
   btnFlip.addEventListener('click', async ()=>{ facing = (facing==='user')?'environment':'user'; await startCamera(); });
+  fxSel.addEventListener('change', e=>{ effect = e.target.value; initEffect(effect); });
+  [intensityEl,speedEl,sizeEl,dirEl,tintEl,glowEl,blurEl].forEach(el=>el.addEventListener('input', ()=> tuneEffect()));
+
+  // Screenshot
   btnShot.addEventListener('click', ()=>{
     try{
       const tmp = document.createElement('canvas'); tmp.width = w; tmp.height = h;
@@ -183,7 +188,7 @@
     }catch(e){ console.error(e); }
   });
 
-  // Recording (small red dot, no text)
+  // Recording (dot only)
   let mediaRecorder=null, chunks=[], recording=false, recordTimer=null;
   btnRec.addEventListener('click', ()=>{ if (!recording) startRecording(); else stopRecording(); });
   function pickBestMime(){
@@ -222,7 +227,7 @@
     setTimeout(()=>URL.revokeObjectURL(url), 60000);
   }
 
-  // Effects (same realism core, no on-screen text)
+  // FX core
   const lerp=(a,b,t)=>a+(b-a)*t, rand=(a=0,b=1)=>Math.random()*(b-a)+a;
   function hexToRgb(hex){ const m=/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex); if(!m) return {r:127,g:197,b:255}; return {r:parseInt(m[1],16),g:parseInt(m[2],16),b:parseInt(m[3],16)}; }
   function makeNoise(seed=1337){ let s=seed; function xs(){s^=s<<13; s^=s>>17; s^=s<<5; return (s>>>0)/4294967295;}
@@ -234,7 +239,6 @@
   }
   const noise = makeNoise();
 
-  let lastT=performance.now();
   function initEffect(){ particles.length=0; tuneEffect(true); }
   function tuneEffect(reset=false){
     const tint = hexToRgb(tintEl.value);
@@ -260,12 +264,14 @@
     return {type:'fire',x:w*0.5+(Math.random()*2-1)*w*0.12,y:h-Math.random()*20*dpr,vx:(Math.random()*0.8-0.4)*dpr,vy:-(1.0+2.2*S)*dpr,life:0.8+Math.random()*0.8,age:0,r:(2.0+3.0*Z)*dpr,ember:Math.random()<0.15?1:0,tint};
   }
 
+  // Render
   function tick(t){
     if (!running) return;
     requestAnimationFrame(tick);
     if (!video.videoWidth) return;
     resize();
-    if (blurEl.checked){ ctx.fillStyle='rgba(0,0,0,0.08)'; ctx.fillRect(0,0,w,h); } else ctx.clearRect(0,0,w,h);
+    if (document.getElementById('motionBlur').checked){ ctx.fillStyle='rgba(0,0,0,0.08)'; ctx.fillRect(0,0,w,h); }
+    else ctx.clearRect(0,0,w,h);
     drawVideoCover(ctx, video, w, h);
     switch(effect){
       case 'rain': drawRain(t); break;
@@ -273,9 +279,9 @@
       case 'fire': drawFire(t); break;
       case 'wind': drawWind(t); break;
     }
-    lastT = t;
   }
 
+  // Drawers
   function drawRain(t){
     const rgb = hexToRgb(tintEl.value);
     ctx.lineCap='round';
@@ -342,10 +348,7 @@
     }
   }
 
-  // helpers reused above
-  function hexToRgb(hex){ const m=/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex); if(!m) return {r:127,g:197,b:255}; return {r:parseInt(m[1],16),g:parseInt(m[2],16),b:parseInt(m[3],16)}; }
-
-  // Kick to full screen on first interaction (optional, no text)
+  // Fullscreen on first interaction (optional)
   document.addEventListener('touchend',()=>{ const de=document.documentElement; if (de.requestFullscreen) { try{de.requestFullscreen();}catch{}} },{once:true});
 })();
 </script>
