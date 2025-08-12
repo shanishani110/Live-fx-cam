@@ -1,4 +1,5 @@
-<!DOCTYPE html>
+# Retry: write two versions without extra processing to avoid tool errors.
+pro_code = """<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8" />
@@ -24,7 +25,7 @@
   main{position:relative;overflow:hidden}
   #stage{position:relative;width:100%;height:calc(100vh - 190px);max-height:100vh}
   video,canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border:none;touch-action:none}
-  #cam{opacity:0} /* draw to canvas, keep video for stream */
+  #cam{opacity:0}
   .badge{position:absolute;top:10px;right:10px;background:rgba(8,12,18,.7);border:1px solid var(--line);padding:6px 10px;border-radius:999px;font-size:12px}
   footer{padding:8px 14px;color:var(--muted);font-size:12px;border-top:1px solid var(--line);background:#0b1219;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}
   .spacer{flex:1}
@@ -55,7 +56,6 @@
       <div class="group"><label>Tint</label><input id="tint" type="color" value="#7fc5ff" disabled></div>
       <div class="group"><label><input id="glow" type="checkbox" disabled> Glow</label></div>
       <div class="group"><label><input id="motionBlur" type="checkbox" checked disabled> Motion blur</label></div>
-      <!-- Capture -->
       <div class="group">
         <button id="btnShot" disabled>📸 Screenshot</button>
         <button id="btnRec" disabled>● Record</button>
@@ -81,7 +81,6 @@
 
 <script>
 (() => {
-  // Elements
   const video = document.getElementById('cam');
   const canvas = document.getElementById('fxCanvas');
   const ctx = canvas.getContext('2d', { alpha: true });
@@ -102,7 +101,6 @@
   const recStatus = document.getElementById('recStatus');
   const downloads = document.getElementById('downloads');
 
-  // State
   let running = false;
   let facing = 'environment';
   let stream = null;
@@ -112,20 +110,17 @@
   const dpr = Math.max(1, Math.min(2, devicePixelRatio || 1));
   let lastT = performance.now();
 
-  // Recorder
   let mediaRecorder = null;
   let chunks = [];
   let recording = false;
   let recordTimer = null;
 
-  // Utils
   function setStatus(t){ statusEl.textContent = t; }
   function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
   function lerp(a,b,t){ return a + (b-a)*t; }
   function rand(a=0,b=1){ return Math.random()*(b-a)+a; }
   function hexToRgb(hex){ const m=/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex); if(!m) return {r:127,g:197,b:255}; return {r:parseInt(m[1],16),g:parseInt(m[2],16),b:parseInt(m[3],16)}; }
 
-  // Simple noise (for turbulence)
   function makeNoise(seed=1337){
     let s = seed;
     function xorshift(){ s^=s<<13; s^=s>>17; s^=s<<5; return (s>>>0)/4294967295; }
@@ -163,7 +158,6 @@
     ctx.drawImage(video, dx, dy, dw, dh);
   }
 
-  // Camera
   async function startCamera(){
     setStatus('requesting camera…');
     btnStart.disabled = true;
@@ -195,20 +189,16 @@
     running = false;
   }
 
-  // UI
   btnStart.addEventListener('click', startCamera);
   btnFlip.addEventListener('click', async ()=>{ facing = (facing==='user')?'environment':'user'; await startCamera(); });
   fxSel.addEventListener('change', e=>{ effect = e.target.value; initEffect(effect); });
   [intensityEl,speedEl,sizeEl,dirEl,tintEl,glowEl,blurEl].forEach(el=>el.addEventListener('input', ()=>{ if(el===dirEl) dirLabel.textContent = dirEl.value + '°'; tuneEffect(); }));
 
-  // Screenshot
   btnShot.addEventListener('click', ()=>{
     try{
-      // create still image
       const tmp = document.createElement('canvas');
       tmp.width = w; tmp.height = h;
       const tctx = tmp.getContext('2d', {alpha:true});
-      // redraw current frame (video + FX) by copying our canvas
       tctx.drawImage(canvas, 0, 0);
       const url = tmp.toDataURL('image/png');
       downloadBlob(url, `livefxcam_${Date.now()}.png`, true);
@@ -218,42 +208,29 @@
     }
   });
 
-  // Recording (Canvas capture)
-  btnRec.addEventListener('click', ()=>{
-    if (!recording) startRecording();
-    else stopRecording();
-  });
+  btnRec.addEventListener('click', ()=>{ if (!recording) startRecording(); else stopRecording(); });
 
   function pickBestMime(){
-    const prefs = [
-      'video/mp4;codecs=h264',
-      'video/mp4',
-      'video/webm;codecs=vp9',
-      'video/webm;codecs=vp8',
-      'video/webm'
-    ];
-    for (const m of prefs){
-      if (MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(m)) return m;
-    }
+    const prefs = ['video/mp4;codecs=h264','video/mp4','video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm'];
+    for (const m of prefs){ if (MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(m)) return m; }
     return '';
   }
 
   function startRecording(){
     try{
       const fps = 30;
-      const stream = canvas.captureStream ? canvas.captureStream(fps) : null;
-      if (!stream){ alert('Recording not supported in this browser.'); return; }
+      const s = canvas.captureStream ? canvas.captureStream(fps) : null;
+      if (!s){ alert('Recording not supported in this browser.'); return; }
       const mime = pickBestMime();
-      mediaRecorder = new MediaRecorder(stream, mime ? {mimeType:mime} : {});
+      mediaRecorder = new MediaRecorder(s, mime ? {mimeType:mime} : {});
       chunks = [];
       mediaRecorder.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
       mediaRecorder.onstop = finalizeRecording;
-      mediaRecorder.start(); // start immediately
+      mediaRecorder.start();
       recording = true;
       btnRec.textContent = '■ Stop';
       btnRec.classList.add('danger');
       recStatus.textContent = 'Recording… (max ~30s)';
-      // safety auto-stop at ~30s
       recordTimer = setTimeout(()=>{ if(recording) stopRecording(); }, 30000);
     }catch(e){
       console.error(e);
@@ -280,24 +257,21 @@
     const url = URL.createObjectURL(blob);
     const ext = blob.type.includes('mp4') ? 'mp4' : 'webm';
     downloadBlob(url, `livefxcam_${Date.now()}.${ext}`);
-    // iOS tip: if it opens in a new tab, tap share → Save Video / Save to Files.
   }
 
   function downloadBlob(url, filename, dataURL=false){
     const a = document.createElement('a');
     a.href = url;
-    a.download = filename; // many browsers (incl. iOS) honor this for files
+    a.download = filename;
     a.className = 'button';
     a.textContent = 'Saved: ' + filename;
     a.target = '_blank';
     downloads.prepend(a);
     downloads.prepend(document.createElement('br'));
-    // auto-click for convenience
     setTimeout(()=>a.click(), 0);
     if (!dataURL) setTimeout(()=>URL.revokeObjectURL(url), 60*1000);
   }
 
-  // Effects
   function initEffect(name){ particles.length = 0; tuneEffect(true); }
   function tuneEffect(reset=false){
     const tint = hexToRgb(tintEl.value);
@@ -335,7 +309,6 @@
     if (!video.videoWidth) return;
     resize();
 
-    // base/background + optional motion blur trails
     ctx.save();
     if (blurEl.checked){ ctx.fillStyle='rgba(0,0,0,0.08)'; ctx.fillRect(0,0,w,h); } else { ctx.clearRect(0,0,w,h); }
     drawVideoCover(ctx, video, w, h);
@@ -432,10 +405,29 @@
     if (glowEl.checked){ ctx.fillStyle=`rgba(${tint.r},${tint.g},${tint.b},0.04)`; ctx.fillRect(0,0,w,h); }
   }
 
-  // Lifecycle
   document.addEventListener('visibilitychange', ()=>{ if (document.visibilityState==='visible' && stream && video.paused) video.play().catch(()=>{}); });
   if (!('mediaDevices' in navigator) || !('getUserMedia' in navigator.mediaDevices)){ setStatus('getUserMedia unsupported'); btnStart.disabled=true; alert('getUserMedia is not supported in this browser.'); } else { setStatus('ready'); }
 })();
 </script>
 </body>
 </html>
+"""
+
+# Create lite version by string tweaks
+lite_code = pro_code.replace("const dpr = Math.max(1, Math.min(2, devicePixelRatio || 1));",
+                             "const dpr = 1.25; // cap DPR for performance")
+lite_code = lite_code.replace('id="motionBlur" type="checkbox" checked disabled', 'id="motionBlur" type="checkbox" disabled')
+lite_code = lite_code.replace("(w*h)/9000", "(w*h)/12000")
+lite_code = lite_code.replace("(w*h)/16000", "(w*h)/22000")
+lite_code = lite_code.replace("Math.floor(120*(0.3+I*1.7))", "Math.floor(80*(0.3+I*1.4))")
+lite_code = lite_code.replace("Math.floor(70*(0.3+I*2.0))", "Math.floor(45*(0.3+I*1.8))")
+lite_code = lite_code.replace("const fps = 30;", "const fps = 24;")
+lite_code = lite_code.replace("30000", "20000")
+
+# Save files
+with open("/mnt/data/livefxcam_pro.html","w",encoding="utf-8") as f:
+    f.write(pro_code)
+with open("/mnt/data/livefxcam_pro_lite.html","w",encoding="utf-8") as f:
+    f.write(lite_code)
+
+("/mnt/data/livefxcam_pro.html","/mnt/data/livefxcam_pro_lite.html")
